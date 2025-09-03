@@ -7,6 +7,8 @@ from PIL import Image
 import json
 import pickle
 import matplotlib.pyplot as plt
+import plotly.express as px
+import seaborn as sns
 import pandas as pd
 import os
 

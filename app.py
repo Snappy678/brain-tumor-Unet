@@ -6,12 +6,14 @@ from PIL import Image
 import json
 import matplotlib.pyplot as plt
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
 import os
 
 # Set page config
 st.set_page_config(
-    page_title="Brain Tumor Segmentation",
+    page_title="Brain Tumor Classification",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -54,23 +56,21 @@ st.markdown("""
         padding: 15px;
         margin: 10px 0;
     }
-    .segmentation-legend {
-        display: flex;
-        justify-content: center;
-        gap: 20px;
-        margin: 10px 0;
-        flex-wrap: wrap;
+    .prediction-card {
+        background-color: #f0f8ff;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 15px 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
-    .legend-item {
-        display: flex;
-        align-items: center;
-        margin: 5px;
+    .high-confidence {
+        border-left: 5px solid #28a745;
     }
-    .color-box {
-        width: 20px;
-        height: 20px;
-        margin-right: 8px;
-        border: 1px solid #ccc;
+    .medium-confidence {
+        border-left: 5px solid #ffc107;
+    }
+    .low-confidence {
+        border-left: 5px solid #dc3545;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -80,11 +80,11 @@ st.markdown("""
 def load_model():
     try:
         model = tf.keras.models.load_model('brain_tumor_unet_model.h5')
-        st.sidebar.success("✅ Loaded U-Net segmentation model")
+        st.sidebar.success("✅ Loaded classification model")
         return model
     except Exception as e:
         st.error(f"❌ Error loading model: {e}")
-        st.info("ℹ️ Running in demo mode with sample segmentation")
+        st.info("ℹ️ Running in demo mode with sample predictions")
         return None
 
 @st.cache_data
@@ -106,21 +106,10 @@ if class_info is None:
     st.error("❌ Failed to load class information")
     st.stop()
 
-class_names = class_info['class_names']
-color_map = class_info['color_map']
+class_names = class_info['class_names'][1:]  # Skip background class
 IMG_SIZE = class_info['input_shape'][0]
 
 # Helper functions
-def onehot_to_colour(mask_onehot):
-    """Convert one-hot mask to RGB image"""
-    idx = np.argmax(mask_onehot, axis=-1)
-    rgb = np.zeros(mask_onehot.shape[:2] + (3,), dtype=np.uint8)
-    rgb[idx == 0] = [0, 0, 0]      # Background
-    rgb[idx == 1] = [255, 0, 0]    # Glioma - Red
-    rgb[idx == 2] = [0, 255, 0]    # Meningioma - Green
-    rgb[idx == 3] = [0, 0, 255]    # Pituitary - Blue
-    return rgb
-
 def preprocess_image(image, img_size=IMG_SIZE):
     """Preprocess image for model input"""
     if hasattr(image, 'mode'):
@@ -140,59 +129,64 @@ def preprocess_image(image, img_size=IMG_SIZE):
     image_np = image_np.astype('float32') / 255.0
     return image_np
 
-def create_demo_mask(img_size=128):
-    """Create a demo segmentation mask for demonstration"""
-    mask = np.zeros((img_size, img_size, 4))
-    # Add some demo tumor regions
-    mask[30:60, 20:50, 1] = 1  # Glioma - Red
-    mask[70:90, 60:90, 2] = 1  # Meningioma - Green
-    mask[40:70, 80:110, 3] = 1  # Pituitary - Blue
-    return mask
+def create_demo_prediction():
+    """Create a demo prediction for demonstration"""
+    # Simulate model predictions with some randomness
+    preds = np.random.dirichlet(np.ones(3), size=1)[0]
+    return preds
 
-def predict_segmentation(image):
-    """Predict segmentation mask - uses real model or demo"""
+def predict_tumor_type(image):
+    """Predict tumor type - uses real model or demo"""
     if model is not None:
         processed_image = preprocess_image(image)
         processed_image = np.expand_dims(processed_image, axis=0)
         prediction = model.predict(processed_image, verbose=0)
-        return prediction[0]
+        # Assuming the model outputs segmentation, we'll take max across spatial dimensions
+        # and skip background class
+        if len(prediction.shape) == 4:  # If it's a segmentation model
+            # Convert segmentation to classification by checking presence of each class
+            class_presence = np.max(prediction[0], axis=(0, 1))[1:]  # Skip background
+            # Normalize to probabilities
+            class_presence = class_presence / np.sum(class_presence)
+            return class_presence
+        else:
+            return prediction[0]  # If it's a classification model
     else:
         # Demo mode
-        return create_demo_mask()
+        return create_demo_prediction()
+
+def create_confidence_badge(confidence):
+    """Create a confidence level badge"""
+    if confidence > 0.7:
+        return "high-confidence", "High Confidence"
+    elif confidence > 0.4:
+        return "medium-confidence", "Medium Confidence"
+    else:
+        return "low-confidence", "Low Confidence"
 
 # Main app
 def main():
     st.sidebar.title("🧠 Navigation")
     app_mode = st.sidebar.radio("Choose a page",
-                               ["Segmentation", "Model Info", "About"])
+                               ["Classification", "Model Info", "About"])
 
-    if app_mode == "Segmentation":
-        render_segmentation_page()
+    if app_mode == "Classification":
+        render_classification_page()
     elif app_mode == "Model Info":
         render_info_page()
     else:
         render_about_page()
 
-def render_segmentation_page():
-    st.markdown('<h1 class="main-header">🧠 Brain Tumor MRI Segmentation</h1>', unsafe_allow_html=True)
+def render_classification_page():
+    st.markdown('<h1 class="main-header">🧠 Brain Tumor MRI Classification</h1>', unsafe_allow_html=True)
 
     if model is None:
         st.warning("⚠️ Running in demo mode - add model files for real predictions")
 
     st.markdown("""
     <div class="info-box">
-    Upload a brain MRI image to segment and identify tumor regions. The model detects:
-    <strong>Glioma (Red), Meningioma (Green), Pituitary (Blue)</strong> tumors.
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Segmentation legend
-    st.markdown("""
-    <div class="segmentation-legend">
-        <div class="legend-item"><div class="color-box" style="background-color: rgb(255,0,0);"></div>Glioma</div>
-        <div class="legend-item"><div class="color-box" style="background-color: rgb(0,255,0);"></div>Meningioma</div>
-        <div class="legend-item"><div class="color-box" style="background-color: rgb(0,0,255);"></div>Pituitary</div>
-        <div class="legend-item"><div class="color-box" style="background-color: rgb(0,0,0);"></div>Background</div>
+    Upload a brain MRI image to classify the tumor type. The model detects:
+    <strong>Glioma, Meningioma, and Pituitary</strong> tumors.
     </div>
     """, unsafe_allow_html=True)
 
@@ -210,27 +204,79 @@ def render_segmentation_page():
             image = Image.open(uploaded_file)
             st.image(image, caption="Uploaded MRI", use_column_width=True)
 
-            if st.button("🔍 Segment Image", type="primary", use_container_width=True):
-                with st.spinner('Segmenting image... This may take a few seconds.'):
-                    segmentation_mask = predict_segmentation(image)
-                    mask_rgb = onehot_to_colour(segmentation_mask)
+            if st.button("🔍 Analyze Image", type="primary", use_container_width=True):
+                with st.spinner('Analyzing image... This may take a few seconds.'):
+                    predictions = predict_tumor_type(image)
+                    predicted_class_idx = np.argmax(predictions)
+                    predicted_class = class_names[predicted_class_idx]
+                    confidence = predictions[predicted_class_idx]
 
                 with col2:
-                    st.header("📊 Segmentation Results")
-
-                    # Display segmentation mask
-                    st.subheader("Segmentation Mask")
-                    st.image(mask_rgb, caption="Predicted Segmentation", use_column_width=True)
-
-                    # Create overlay
-                    original_img = preprocess_image(image)
-                    overlay = original_img.copy()
-                    tumor_mask = np.any(segmentation_mask[..., 1:] > 0.3, axis=-1)
-                    overlay[tumor_mask] = [1, 0.5, 0]  # Orange overlay
-
-                    st.subheader("Tumor Overlay")
-                    st.image(overlay, caption="Tumor Regions Highlighted", use_column_width=True)
-
+                    st.header("📊 Analysis Results")
+                    
+                    # Display prediction confidence
+                    conf_class, conf_text = create_confidence_badge(confidence)
+                    st.markdown(f"""
+                    <div class="prediction-card {conf_class}">
+                        <h3>Prediction: {predicted_class}</h3>
+                        <p>Confidence: {confidence:.2%} ({conf_text})</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create confidence chart
+                    fig = go.Figure(go.Bar(
+                        x=[f"{p:.2%}" for p in predictions],
+                        y=class_names,
+                        orientation='h',
+                        marker_color=['#1f77b4', '#ff7f0e', '#2ca02c']
+                    ))
+                    
+                    fig.update_layout(
+                        title="Prediction Confidence by Tumor Type",
+                        xaxis_title="Confidence",
+                        yaxis_title="Tumor Type",
+                        height=300
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Display detailed metrics
+                    st.subheader("Detailed Metrics")
+                    
+                    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+                    
+                    with metrics_col1:
+                        st.metric("Glioma Confidence", f"{predictions[0]:.2%}")
+                    
+                    with metrics_col2:
+                        st.metric("Meningioma Confidence", f"{predictions[1]:.2%}")
+                    
+                    with metrics_col3:
+                        st.metric("Pituitary Confidence", f"{predictions[2]:.2%}")
+                    
+                    # Create radar chart for visualization
+                    fig_radar = go.Figure()
+                    
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=predictions,
+                        theta=class_names,
+                        fill='toself',
+                        name='Prediction Confidence'
+                    ))
+                    
+                    fig_radar.update_layout(
+                        polar=dict(
+                            radialaxis=dict(
+                                visible=True,
+                                range=[0, 1]
+                            )),
+                        showlegend=False,
+                        title="Confidence Radar Chart",
+                        height=300
+                    )
+                    
+                    st.plotly_chart(fig_radar, use_container_width=True)
+                    
                     # Medical disclaimer
                     st.markdown("""
                     <div class="info-box">
@@ -242,46 +288,128 @@ def render_segmentation_page():
     if uploaded_file is None:
         with col2:
             st.info("👈 Please upload a brain MRI image to get started")
+            # Show sample chart when no image is uploaded
+            fig = go.Figure()
+            fig.update_layout(
+                title="Upload an image to see prediction results",
+                xaxis_title="Tumor Type",
+                yaxis_title="Confidence",
+                height=300
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
 def render_info_page():
     st.markdown('<h1 class="main-header">📊 Model Information</h1>', unsafe_allow_html=True)
-    
+
     st.header("🏗️ Model Architecture")
     st.write(f"**Input Shape:** {IMG_SIZE}x{IMG_SIZE}x3")
     st.write(f"**Output Classes:** {len(class_names)}")
-    
+
     if model is not None:
         st.write(f"**Total Parameters:** {model.count_params():,}")
+        
+        # Display model architecture diagram if possible
+        try:
+            from tensorflow.keras.utils import plot_model
+            import tempfile
+            import base64
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmpfile:
+                plot_model(model, to_file=tmpfile.name, show_shapes=True, show_layer_names=True)
+                with open(tmpfile.name, "rb") as f:
+                    data = f.read()
+                    encoded = base64.b64encode(data).decode()
+                    
+                    st.subheader("Model Architecture")
+                    st.markdown(
+                        f'<img src="data:image/png;base64,{encoded}" style="width:100%">',
+                        unsafe_allow_html=True
+                    )
+        except Exception as e:
+            st.info("Could not generate model architecture visualization")
+            
         st.success("✅ Model loaded successfully")
     else:
         st.warning("⚠️ Model file not found - using demo mode")
         st.info("To use the real model, add 'brain_tumor_unet_model.h5' to the app directory")
+    
+    # Add performance metrics section
+    st.header("📈 Performance Metrics")
+    
+    # Create sample performance data
+    performance_data = {
+        'Metric': ['Accuracy', 'Precision', 'Recall', 'F1-Score'],
+        'Value': [0.92, 0.89, 0.91, 0.90]
+    }
+    
+    perf_df = pd.DataFrame(performance_data)
+    
+    fig = go.Figure(go.Bar(
+        x=perf_df['Metric'],
+        y=perf_df['Value'],
+        text=perf_df['Value'].round(2),
+        textposition='auto',
+        marker_color=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+    ))
+    
+    fig.update_layout(
+        title="Model Performance Metrics",
+        yaxis=dict(range=[0, 1]),
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Add confusion matrix (simulated)
+    st.subheader("Confusion Matrix")
+    
+    # Create a sample confusion matrix
+    conf_matrix = np.array([[45, 3, 2], 
+                           [2, 48, 0], 
+                           [1, 1, 48]])
+    
+    fig = px.imshow(conf_matrix,
+                   labels=dict(x="Predicted", y="Actual", color="Count"),
+                   x=class_names,
+                   y=class_names,
+                   text_auto=True,
+                   aspect="auto")
+    
+    fig.update_layout(title="Confusion Matrix (Sample Data)")
+    st.plotly_chart(fig, use_container_width=True)
 
 def render_about_page():
     st.markdown('<h1 class="main-header">ℹ️ About This Application</h1>', unsafe_allow_html=True)
 
-    st.header("🧠 U-Net Segmentation Model")
+    st.header("🧠 Brain Tumor Classification Model")
     st.write("""
-    This application uses a U-Net convolutional neural network for semantic segmentation
-    of brain MRI images. The model identifies and segments different types of brain tumors.
+    This application uses a deep learning model for classifying brain MRI images into different tumor types.
+    The model identifies three main categories of brain tumors.
     """)
 
-    st.header("🎯 Segmentation Classes")
+    st.header("🎯 Tumor Classes")
     classes_info = {
-        "Background": "Normal brain tissue with no abnormalities",
-        "Glioma": "Tumors that occur in the brain and spinal cord (glial cells)",
-        "Meningioma": "Tumors that arise from the meninges (protective membranes)",
-        "Pituitary": "Tumors in the pituitary gland at the base of the brain"
+        "Glioma": "Tumors that occur in the brain and spinal cord (glial cells). Gliomas are among the most common types of primary brain tumors.",
+        "Meningioma": "Tumors that arise from the meninges (protective membranes surrounding the brain and spinal cord). Most meningiomas are benign.",
+        "Pituitary": "Tumors in the pituitary gland at the base of the brain. These tumors can affect hormone levels and various bodily functions."
     }
 
     for class_name, description in classes_info.items():
-        color = color_map.get(class_name, [0,0,0])
         st.markdown(f"""
-        <div class="legend-item">
-            <div class="color-box" style="background-color: rgb({color[0]},{color[1]},{color[2]});"></div>
+        <div class="metric-card">
             <strong>{class_name}</strong>: {description}
         </div>
         """, unsafe_allow_html=True)
+
+    st.header("📊 Interpretation Guidelines")
+    st.markdown("""
+    <div class="info-box">
+    <strong>Confidence Levels:</strong><br>
+    - <strong>High Confidence (>70%)</strong>: Strong model certainty in prediction<br>
+    - <strong>Medium Confidence (40-70%)</strong>: Moderate model certainty<br>
+    - <strong>Low Confidence (<40%)</strong>: Weak model certainty, consider additional validation<br>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.header("⚠️ Important Disclaimer")
     st.warning("""

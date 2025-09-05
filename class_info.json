@@ -1,1 +1,1 @@
-{"class_names": ["glioma", "meningioma", "notumor", "pituitary"], "class_indices": {"glioma": 0, "meningioma": 1, "notumor": 2, "pituitary": 3}, "input_shape": [224, 224, 3]}
+{"class_names": ["Background", "Glioma", "Meningioma", "Pituitary"], "input_shape": [128, 128, 3], "color_map": {"Background": [0, 0, 0], "Glioma": [255, 0, 0], "Meningioma": [0, 255, 0], "Pituitary": [0, 0, 255]}}

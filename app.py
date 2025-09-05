@@ -48,13 +48,15 @@ st.markdown("""
         border-radius: 5px;
         padding: 15px;
         margin: 10px 0;
+        color: #000000;
     }
     .info-box {
-        background-color: #fff;
+        background-color: #d1ecf1;
         border: 1px solid #bee5eb;
         border-radius: 5px;
         padding: 15px;
         margin: 10px 0;
+        color: #000000;
     }
     .prediction-card {
         background-color: #f0f8ff;
@@ -62,6 +64,7 @@ st.markdown("""
         padding: 20px;
         margin: 15px 0;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        color: #000000;
     }
     .high-confidence {
         border-left: 5px solid #28a745;

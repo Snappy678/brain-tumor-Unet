@@ -34,6 +34,7 @@ st.markdown("""
         border-radius: 10px;
         border-left: 4px solid #1f77b4;
         margin: 0.5rem 0;
+        color: #000000;
     }
     .success-box {
         background-color: #d4edda;
@@ -41,6 +42,7 @@ st.markdown("""
         border-radius: 5px;
         padding: 15px;
         margin: 10px 0;
+        color: #000000;
     }
     .warning-box {
         background-color: #fff3cd;
@@ -412,7 +414,7 @@ def render_about_page():
 
     st.header("🎯 Classification Categories")
     classes_info = {
-        "no tumor": "No tumor detected in the MRI image (healthy brain).",
+        "background": "No tumor detected in the MRI image (healthy brain).",
         "glioma": "Tumors that occur in the brain and spinal cord (glial cells). Gliomas are among the most common types of primary brain tumors.",
         "meningioma": "Tumors that arise from the meninges (protective membranes surrounding the brain and spinal cord). Most meningiomas are benign.",
         "pituitary": "Tumors in the pituitary gland at the base of the brain. These tumors can affect hormone levels and various bodily functions."

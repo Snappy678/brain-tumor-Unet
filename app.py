@@ -75,6 +75,9 @@ st.markdown("""
     .low-confidence {
         border-left: 5px solid #dc3545;
     }
+    .no-tumor {
+        border-left: 5px solid #17a2b8;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -99,17 +102,18 @@ def load_metadata():
         return class_info
     except Exception as e:
         st.error(f"❌ Error loading class_info.json: {e}")
-        return None
+        # Return default class info if file not found
+        return {
+            "class_names": ["background", "glioma", "meningioma", "pituitary"],
+            "input_shape": [224, 224, 3]
+        }
 
 # Load resources
 model = load_model()
 class_info = load_metadata()
 
-if class_info is None:
-    st.error("❌ Failed to load class information")
-    st.stop()
-
-class_names = class_info['class_names'][1:]  # Skip background class
+# Use ALL class names (background represents "no tumor")
+class_names = class_info['class_names']
 IMG_SIZE = class_info['input_shape'][0]
 
 # Helper functions
@@ -135,7 +139,8 @@ def preprocess_image(image, img_size=IMG_SIZE):
 def create_demo_prediction():
     """Create a demo prediction for demonstration"""
     # Simulate model predictions with some randomness
-    preds = np.random.dirichlet(np.ones(3), size=1)[0]
+    # Higher probability for background (no tumor) class in demo
+    preds = np.random.dirichlet([2, 1, 1, 1], size=1)[0]
     return preds
 
 def predict_tumor_type(image):
@@ -144,28 +149,39 @@ def predict_tumor_type(image):
         processed_image = preprocess_image(image)
         processed_image = np.expand_dims(processed_image, axis=0)
         prediction = model.predict(processed_image, verbose=0)
-        # Assuming the model outputs segmentation, we'll take max across spatial dimensions
-        # and skip background class
+        
+        # Handle different model output types
         if len(prediction.shape) == 4:  # If it's a segmentation model
             # Convert segmentation to classification by checking presence of each class
-            class_presence = np.max(prediction[0], axis=(0, 1))[1:]  # Skip background
+            # Include ALL classes (background is "no tumor")
+            class_presence = np.max(prediction[0], axis=(0, 1))
             # Normalize to probabilities
             class_presence = class_presence / np.sum(class_presence)
             return class_presence
         else:
-            return prediction[0]  # If it's a classification model
+            # For classification model, return all predictions
+            return prediction[0]
     else:
         # Demo mode
         return create_demo_prediction()
 
-def create_confidence_badge(confidence):
+def create_confidence_badge(confidence, class_name):
     """Create a confidence level badge"""
-    if confidence > 0.7:
+    if class_name == "background":
+        return "no-tumor", "No Tumor Detected"
+    elif confidence > 0.7:
         return "high-confidence", "High Confidence"
     elif confidence > 0.4:
         return "medium-confidence", "Medium Confidence"
     else:
         return "low-confidence", "Low Confidence"
+
+def get_display_name(class_name):
+    """Convert internal class name to display name"""
+    if class_name == "background":
+        return "No Tumor"
+    else:
+        return class_name.capitalize()
 
 # Main app
 def main():
@@ -189,7 +205,7 @@ def render_classification_page():
     st.markdown("""
     <div class="info-box">
     Upload a brain MRI image to classify the tumor type. The model detects:
-    <strong>Glioma, Meningioma, and Pituitary</strong> tumors.
+    <strong>Glioma, Meningioma, Pituitary tumors, or No Tumor</strong>.
     </div>
     """, unsafe_allow_html=True)
 
@@ -218,27 +234,31 @@ def render_classification_page():
                     st.header("📊 Analysis Results")
                     
                     # Display prediction confidence
-                    conf_class, conf_text = create_confidence_badge(confidence)
+                    conf_class, conf_text = create_confidence_badge(confidence, predicted_class)
+                    display_class = get_display_name(predicted_class)
+                    
                     st.markdown(f"""
                     <div class="prediction-card {conf_class}">
-                        <h3>Prediction: {predicted_class}</h3>
+                        <h3>Prediction: {display_class}</h3>
                         <p>Confidence: {confidence:.2%} ({conf_text})</p>
                     </div>
                     """, unsafe_allow_html=True)
                     
                     # Create confidence chart
+                    display_names = [get_display_name(name) for name in class_names]
+                    
                     fig = go.Figure(go.Bar(
                         x=[f"{p:.2%}" for p in predictions],
-                        y=class_names,
+                        y=display_names,
                         orientation='h',
-                        marker_color=['#1f77b4', '#ff7f0e', '#2ca02c']
+                        marker_color=['#17a2b8', '#1f77b4', '#ff7f0e', '#2ca02c']
                     ))
                     
                     fig.update_layout(
-                        title="Prediction Confidence by Tumor Type",
+                        title="Prediction Confidence",
                         xaxis_title="Confidence",
-                        yaxis_title="Tumor Type",
-                        height=300
+                        yaxis_title="Classification",
+                        height=350
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
@@ -246,23 +266,18 @@ def render_classification_page():
                     # Display detailed metrics
                     st.subheader("Detailed Metrics")
                     
-                    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+                    metrics_cols = st.columns(len(class_names))
                     
-                    with metrics_col1:
-                        st.metric("Glioma Confidence", f"{predictions[0]:.2%}")
-                    
-                    with metrics_col2:
-                        st.metric("Meningioma Confidence", f"{predictions[1]:.2%}")
-                    
-                    with metrics_col3:
-                        st.metric("Pituitary Confidence", f"{predictions[2]:.2%}")
+                    for i, (class_name, metric_col) in enumerate(zip(display_names, metrics_cols)):
+                        with metric_col:
+                            st.metric(f"{class_name} Confidence", f"{predictions[i]:.2%}")
                     
                     # Create radar chart for visualization
                     fig_radar = go.Figure()
                     
                     fig_radar.add_trace(go.Scatterpolar(
                         r=predictions,
-                        theta=class_names,
+                        theta=display_names,
                         fill='toself',
                         name='Prediction Confidence'
                     ))
@@ -295,7 +310,7 @@ def render_classification_page():
             fig = go.Figure()
             fig.update_layout(
                 title="Upload an image to see prediction results",
-                xaxis_title="Tumor Type",
+                xaxis_title="Classification",
                 yaxis_title="Confidence",
                 height=300
             )
@@ -306,7 +321,9 @@ def render_info_page():
 
     st.header("🏗️ Model Architecture")
     st.write(f"**Input Shape:** {IMG_SIZE}x{IMG_SIZE}x3")
-    st.write(f"**Output Classes:** {len(class_names)}")
+    
+    display_names = [get_display_name(name) for name in class_names]
+    st.write(f"**Output Classes:** {', '.join(display_names)}")
 
     if model is not None:
         st.write(f"**Total Parameters:** {model.count_params():,}")
@@ -367,14 +384,17 @@ def render_info_page():
     st.subheader("Confusion Matrix")
     
     # Create a sample confusion matrix
-    conf_matrix = np.array([[45, 3, 2], 
-                           [2, 48, 0], 
-                           [1, 1, 48]])
+    conf_matrix = np.array([[45, 3, 2, 0], 
+                           [2, 48, 0, 0], 
+                           [1, 1, 48, 0],
+                           [1, 0, 0, 49]])
+    
+    display_names = [get_display_name(name) for name in class_names]
     
     fig = px.imshow(conf_matrix,
                    labels=dict(x="Predicted", y="Actual", color="Count"),
-                   x=class_names,
-                   y=class_names,
+                   x=display_names,
+                   y=display_names,
                    text_auto=True,
                    aspect="auto")
     
@@ -387,20 +407,22 @@ def render_about_page():
     st.header("🧠 Brain Tumor Classification Model")
     st.write("""
     This application uses a deep learning model for classifying brain MRI images into different tumor types.
-    The model identifies three main categories of brain tumors.
+    The model identifies three main categories of brain tumors or detects if no tumor is present.
     """)
 
-    st.header("🎯 Tumor Classes")
+    st.header("🎯 Classification Categories")
     classes_info = {
-        "Glioma": "Tumors that occur in the brain and spinal cord (glial cells). Gliomas are among the most common types of primary brain tumors.",
-        "Meningioma": "Tumors that arise from the meninges (protective membranes surrounding the brain and spinal cord). Most meningiomas are benign.",
-        "Pituitary": "Tumors in the pituitary gland at the base of the brain. These tumors can affect hormone levels and various bodily functions."
+        "background": "No tumor detected in the MRI image (healthy brain).",
+        "glioma": "Tumors that occur in the brain and spinal cord (glial cells). Gliomas are among the most common types of primary brain tumors.",
+        "meningioma": "Tumors that arise from the meninges (protective membranes surrounding the brain and spinal cord). Most meningiomas are benign.",
+        "pituitary": "Tumors in the pituitary gland at the base of the brain. These tumors can affect hormone levels and various bodily functions."
     }
 
     for class_name, description in classes_info.items():
+        display_name = get_display_name(class_name)
         st.markdown(f"""
         <div class="metric-card">
-            <strong>{class_name}</strong>: {description}
+            <strong>{display_name}</strong>: {description}
         </div>
         """, unsafe_allow_html=True)
 
@@ -408,6 +430,7 @@ def render_about_page():
     st.markdown("""
     <div class="info-box">
     <strong>Confidence Levels:</strong><br>
+    - <strong>No Tumor Detection</strong>: Special category for healthy scans<br>
     - <strong>High Confidence (>70%)</strong>: Strong model certainty in prediction<br>
     - <strong>Medium Confidence (40-70%)</strong>: Moderate model certainty<br>
     - <strong>Low Confidence (<40%)</strong>: Weak model certainty, consider additional validation<br>

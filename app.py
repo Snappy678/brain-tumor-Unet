@@ -412,7 +412,7 @@ def render_about_page():
 
     st.header("🎯 Classification Categories")
     classes_info = {
-        "background": "No tumor detected in the MRI image (healthy brain).",
+        "no tumor": "No tumor detected in the MRI image (healthy brain).",
         "glioma": "Tumors that occur in the brain and spinal cord (glial cells). Gliomas are among the most common types of primary brain tumors.",
         "meningioma": "Tumors that arise from the meninges (protective membranes surrounding the brain and spinal cord). Most meningiomas are benign.",
         "pituitary": "Tumors in the pituitary gland at the base of the brain. These tumors can affect hormone levels and various bodily functions."
